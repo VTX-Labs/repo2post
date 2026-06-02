@@ -32,6 +32,10 @@ beforeAll(() => {
   commit("a.txt", "1\n", "feat: initial release");
   run(["tag", "v1.0.0"]);
   commit("a.txt", "1\n2\n", "fix: handle empty input\n\nThis fixes the empty case.");
+  // This commit also touches a secret file and a lockfile, which must be
+  // excluded from the captured diff.
+  writeFileSync(join(repo, ".env"), "SECRET=supersecretvalue\n");
+  writeFileSync(join(repo, "pnpm-lock.yaml"), "lockfileVersion: 9.0\n");
   commit("b.txt", "new\n", "feat: add --json output flag");
   run(["tag", "v1.1.0"]);
 });
@@ -72,11 +76,29 @@ describe("collectChanges (real git)", () => {
     expect(fixCommit.author).toBe("Test");
   });
 
-  it("computes file changes and totals from numstat", async () => {
+  it("computes file changes and totals from numstat (all files, incl. excluded-from-diff)", async () => {
     const cs = await collectChanges({ cwd: repo, from: "v1.0.0", to: "v1.1.0" });
     const paths = cs.files.map((f) => f.path).sort();
-    expect(paths).toEqual(["a.txt", "b.txt"]);
+    // numstat counts every changed file, even ones the diff later excludes.
+    expect(paths).toEqual([".env", "a.txt", "b.txt", "pnpm-lock.yaml"]);
     expect(cs.insertions).toBeGreaterThan(0);
+  });
+
+  it("captures a diff by default and excludes secrets + lockfiles from it", async () => {
+    const cs = await collectChanges({ cwd: repo, from: "v1.0.0", to: "v1.1.0" });
+    expect(cs.diff).toBeDefined();
+    const diffPaths = cs.diff!.files.map((f) => f.path).sort();
+    expect(diffPaths).toEqual(["a.txt", "b.txt"]);
+    const skipped = Object.fromEntries(cs.diff!.skipped.map((s) => [s.path, s.reason]));
+    expect(skipped[".env"]).toBe("sensitive");
+    expect(skipped["pnpm-lock.yaml"]).toBe("generated");
+    // The secret value must never appear anywhere in the captured diff.
+    expect(JSON.stringify(cs.diff)).not.toContain("supersecretvalue");
+  });
+
+  it("omits the diff entirely when includeDiff is false", async () => {
+    const cs = await collectChanges({ cwd: repo, from: "v1.0.0", to: "v1.1.0", includeDiff: false });
+    expect(cs.diff).toBeUndefined();
   });
 
   it("respects maxCommits", async () => {

@@ -79,4 +79,38 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Change range: HEAD");
     expect(prompt).not.toContain("..HEAD");
   });
+
+  it("renders the captured diff as a fenced block, with truncation/omission notes", () => {
+    const withDiff = changeSet({
+      diff: {
+        files: [
+          { path: "src/cli.ts", patch: "@@ -1 +1 @@\n+const x = 1;", truncated: false },
+          { path: "src/big.ts", patch: "@@ -1 +1 @@\n+a\n… (5 more diff lines truncated)", truncated: true },
+        ],
+        skipped: [{ path: ".env", reason: "sensitive" }],
+        omittedForBudget: ["src/huge.ts"],
+        includedLines: 5,
+      },
+    });
+    const { prompt, system } = buildPrompt({ changes: withDiff, style: "technical" });
+    expect(prompt).toContain("```diff");
+    expect(prompt).toContain("# src/cli.ts");
+    expect(prompt).toContain("# src/big.ts (truncated)");
+    expect(prompt).toContain("Omitted to fit the size budget: src/huge.ts.");
+    // The system prompt now tells the model to use the diff and ignore excluded files.
+    expect(system).toMatch(/code diff/i);
+  });
+
+  it("does not render a diff when includeDiff is false, even if one was captured", () => {
+    const withDiff = changeSet({
+      diff: { files: [{ path: "src/cli.ts", patch: "+x", truncated: false }], skipped: [], omittedForBudget: [], includedLines: 1 },
+    });
+    const { prompt } = buildPrompt({ changes: withDiff, style: "blog", includeDiff: false });
+    expect(prompt).not.toContain("```diff");
+  });
+
+  it("omits the diff section entirely when no diff was captured", () => {
+    const { prompt } = buildPrompt({ changes: changeSet(), style: "blog" });
+    expect(prompt).not.toContain("```diff");
+  });
 });

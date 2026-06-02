@@ -92,6 +92,7 @@ export async function generatePost(
     ...(options.description !== undefined ? { description: options.description } : {}),
     ...(options.maxCommits !== undefined ? { maxCommits: options.maxCommits } : {}),
     ...(options.maxFiles !== undefined ? { maxFiles: options.maxFiles } : {}),
+    ...(options.includeDiff !== undefined ? { includeDiff: options.includeDiff } : {}),
   });
 
   const generateText = options.generateText ?? (await loadGenerateText());

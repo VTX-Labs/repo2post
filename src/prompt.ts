@@ -26,6 +26,8 @@ export interface PromptInput {
   maxCommits?: number;
   /** Soft cap on changed-file lines rendered. Default 60. */
   maxFiles?: number;
+  /** Include the shaped diff (`changes.diff`) in the prompt. Default true. */
+  includeDiff?: boolean;
 }
 
 /** The messages to send to the model. */
@@ -36,9 +38,11 @@ export interface BuiltPrompt {
 
 const BASE_RULES = [
   "You are a precise technical writer that turns software change sets into release content.",
-  "Ground every statement in the provided commits and file changes — never invent features, fixes, numbers, or version names that are not supported by the input.",
+  "Ground every statement in the provided commits, file changes, and code diff — never invent features, fixes, numbers, or version names that are not supported by the input.",
+  "When the commit messages are vague, rely on the actual diff to infer what changed; describe the behavior the code now has, not what a message guesses at.",
   "If the input is thin, write less rather than padding with speculation.",
   "Prefer the user-facing impact of a change over its implementation detail, unless the chosen style is explicitly technical.",
+  "Some files (lockfiles, generated, binary, secrets) are excluded from the diff by design; do not comment on their absence.",
   "Write in clear, plain language. Output only the requested content with no preamble, no meta commentary, and no surrounding code fences.",
 ].join(" ");
 
@@ -65,6 +69,25 @@ function renderFiles(changes: ChangeSet, max: number): string {
   return lines.join("\n");
 }
 
+/** Render the shaped diff as a fenced code block, with an omission footnote. */
+function renderDiff(changes: ChangeSet): string {
+  const diff = changes.diff;
+  if (!diff || diff.files.length === 0) return "";
+
+  const body = diff.files
+    .map((f) => `# ${f.path}${f.truncated ? " (truncated)" : ""}\n${f.patch}`)
+    .join("\n\n");
+
+  const notes: string[] = [];
+  if (diff.omittedForBudget.length > 0) {
+    notes.push(`Omitted to fit the size budget: ${diff.omittedForBudget.join(", ")}.`);
+  }
+  const footnote = notes.length > 0 ? `\n\n${notes.join(" ")}` : "";
+
+  // The diff is fenced so the model treats it as data, not instructions.
+  return `Code diff (sensitive/generated/binary files excluded):\n\`\`\`diff\n${body}\n\`\`\`${footnote}`;
+}
+
 /** Build the system + user prompt for a change set and style. */
 export function buildPrompt(input: PromptInput): BuiltPrompt {
   const { changes, style } = input;
@@ -86,6 +109,10 @@ export function buildPrompt(input: PromptInput): BuiltPrompt {
   sections.push(`Commits (newest first):\n${renderCommits(changes, maxCommits)}`);
   const files = renderFiles(changes, maxFiles);
   if (files) sections.push(`Changed files (largest first):\n${files}`);
+  if (input.includeDiff !== false) {
+    const diff = renderDiff(changes);
+    if (diff) sections.push(diff);
+  }
 
   const prompt = [
     `Write the ${styleDef.name} content for the following change set.`,

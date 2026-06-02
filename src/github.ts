@@ -7,7 +7,8 @@
  * recommended to raise the rate limit and reach private repos.
  */
 
-import type { ChangeSet, Commit } from "./git.js";
+import type { ChangeSet, Commit, FileChange } from "./git.js";
+import { shapeDiff } from "./diff.js";
 
 /** Thrown when the GitHub API request fails. */
 export class GitHubError extends Error {
@@ -39,6 +40,41 @@ interface GhCommit {
   commit: { message: string; author: { name?: string; date?: string } };
 }
 
+interface GhFile {
+  filename: string;
+  additions?: number;
+  deletions?: number;
+  /** The unified-diff hunk for this file. Absent for binary/very large files. */
+  patch?: string;
+}
+
+/** Options for {@link collectPullRequest}. */
+export interface CollectPrOptions {
+  /** Capture and shape the PR diff. Default true. */
+  includeDiff?: boolean;
+  /** Per-file diff line cap. Default 200. */
+  maxLinesPerFile?: number;
+  /** Total diff line cap. Default 1500. */
+  maxTotalLines?: number;
+}
+
+/**
+ * Reconstruct a unified-diff header for a PR file so the shared {@link shapeDiff}
+ * can classify and truncate it exactly like a local `git diff`. The GitHub
+ * `patch` field omits the `diff --git` / `+++` lines, so we add them back.
+ */
+function toUnifiedDiff(files: GhFile[]): string {
+  const blocks: string[] = [];
+  for (const f of files) {
+    if (!f.patch) continue; // binary/too-large: no textual patch from the API
+    blocks.push(`diff --git a/${f.filename} b/${f.filename}`);
+    blocks.push(`--- a/${f.filename}`);
+    blocks.push(`+++ b/${f.filename}`);
+    blocks.push(f.patch);
+  }
+  return blocks.join("\n");
+}
+
 async function gh(path: string, token: string | undefined): Promise<unknown> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
@@ -61,7 +97,11 @@ async function gh(path: string, token: string | undefined): Promise<unknown> {
  *
  * @throws {@link GitHubError} on a failed request.
  */
-export async function collectPullRequest(ref: PrRef, token?: string): Promise<ChangeSet & { title: string; description: string }> {
+export async function collectPullRequest(
+  ref: PrRef,
+  token?: string,
+  options: CollectPrOptions = {},
+): Promise<ChangeSet & { title: string; description: string }> {
   const base = `/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`;
   const pr = (await gh(base, token)) as {
     title?: string;
@@ -72,6 +112,7 @@ export async function collectPullRequest(ref: PrRef, token?: string): Promise<Ch
     deletions?: number;
   };
   const rawCommits = (await gh(`${base}/commits?per_page=100`, token)) as GhCommit[];
+  const rawFiles = (await gh(`${base}/files?per_page=100`, token)) as GhFile[];
 
   const commits: Commit[] = rawCommits.map((rc) => {
     const message = rc.commit.message ?? "";
@@ -88,14 +129,29 @@ export async function collectPullRequest(ref: PrRef, token?: string): Promise<Ch
     };
   });
 
-  return {
+  const files: FileChange[] = rawFiles.map((f) => ({
+    path: f.filename,
+    insertions: f.additions ?? 0,
+    deletions: f.deletions ?? 0,
+  }));
+
+  const result: ChangeSet & { title: string; description: string } = {
     from: pr.base?.ref ?? "",
     to: pr.head?.ref ?? pr.head?.sha ?? "",
     commits,
-    files: [],
+    files,
     insertions: pr.additions ?? 0,
     deletions: pr.deletions ?? 0,
     title: pr.title ?? `Pull request #${ref.number}`,
     description: (pr.body ?? "").trim(),
   };
+
+  if (options.includeDiff !== false) {
+    result.diff = shapeDiff(toUnifiedDiff(rawFiles), {
+      ...(options.maxLinesPerFile !== undefined ? { maxLinesPerFile: options.maxLinesPerFile } : {}),
+      ...(options.maxTotalLines !== undefined ? { maxTotalLines: options.maxTotalLines } : {}),
+    });
+  }
+
+  return result;
 }

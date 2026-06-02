@@ -23,8 +23,11 @@
 export { collectChanges, listTags, GitError } from "./git.js";
 export type { ChangeSet, Commit, FileChange, CollectOptions } from "./git.js";
 
+export { shapeDiff, classifyPath, splitUnifiedDiff } from "./diff.js";
+export type { ShapedDiff, FileDiff, SkipReason, ShapeDiffOptions } from "./diff.js";
+
 export { collectPullRequest, parsePrRef, GitHubError } from "./github.js";
-export type { PrRef } from "./github.js";
+export type { PrRef, CollectPrOptions } from "./github.js";
 
 export { buildPrompt } from "./prompt.js";
 export type { PromptInput, BuiltPrompt } from "./prompt.js";

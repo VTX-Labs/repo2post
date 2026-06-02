@@ -34,8 +34,15 @@ describe("collectPullRequest", () => {
     );
   }
 
-  it("maps a PR and its commits into a ChangeSet", async () => {
+  it("maps a PR, its commits, files, and a shaped diff into a ChangeSet", async () => {
+    // The /files key must precede /pulls/1234 so the substring matcher resolves
+    // the more specific URL first.
     stubFetch({
+      "/pulls/1234/files": [
+        { filename: "src/cli.ts", additions: 3, deletions: 1, patch: "@@ -1 +1 @@\n+const x = 1;" },
+        { filename: ".env", additions: 1, deletions: 1, patch: "@@ -1 +1 @@\n-SECRET=old\n+SECRET=leak" },
+        { filename: "logo.png", additions: 0, deletions: 0 }, // no patch (binary)
+      ],
       "/pulls/1234/commits": [
         { sha: "a".repeat(40), commit: { message: "feat: thing\n\nbody here", author: { name: "Bankk", date: "2026-06-01T00:00:00Z" } } },
         { sha: "b".repeat(40), commit: { message: "fix: bug", author: { name: "Bankk", date: "2026-06-02T00:00:00Z" } } },
@@ -60,6 +67,25 @@ describe("collectPullRequest", () => {
     expect(cs.commits).toHaveLength(2);
     expect(cs.commits[0]).toMatchObject({ subject: "feat: thing", body: "body here", short: "aaaaaaa" });
     expect(cs.commits[1]).toMatchObject({ subject: "fix: bug", body: "" });
+
+    // Files come from the /files endpoint.
+    expect(cs.files.map((f) => f.path).sort()).toEqual([".env", "logo.png", "src/cli.ts"]);
+
+    // The diff is shaped: source kept, secret skipped, secret value never present.
+    expect(cs.diff).toBeDefined();
+    expect(cs.diff!.files.map((f) => f.path)).toEqual(["src/cli.ts"]);
+    expect(cs.diff!.skipped.find((s) => s.path === ".env")?.reason).toBe("sensitive");
+    expect(JSON.stringify(cs.diff)).not.toContain("leak");
+  });
+
+  it("can skip the diff when includeDiff is false", async () => {
+    stubFetch({
+      "/pulls/1/files": [{ filename: "a.ts", additions: 1, deletions: 0, patch: "@@ -0 +1 @@\n+x" }],
+      "/pulls/1/commits": [{ sha: "a".repeat(40), commit: { message: "x", author: {} } }],
+      "/pulls/1": { title: "t", body: "", base: { ref: "main" }, head: { ref: "f" } },
+    });
+    const cs = await collectPullRequest({ owner: "x", repo: "y", number: 1 }, undefined, { includeDiff: false });
+    expect(cs.diff).toBeUndefined();
   });
 
   it("surfaces a helpful error on 403 rate limiting", async () => {
@@ -74,7 +100,9 @@ describe("collectPullRequest", () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const headers = (init?.headers ?? {}) as Record<string, string>;
       expect(headers["Authorization"]).toBe("Bearer tok123");
-      return { ok: true, status: 200, json: async () => (_url.includes("/commits") ? [] : { title: "t", head: {}, base: {} }) } as Response;
+      // /commits and /files both return arrays; the PR endpoint returns an object.
+      const body = _url.includes("/commits") || _url.includes("/files") ? [] : { title: "t", head: {}, base: {} };
+      return { ok: true, status: 200, json: async () => body } as Response;
     });
     vi.stubGlobal("fetch", fetchMock);
     await collectPullRequest({ owner: "x", repo: "y", number: 1 }, "tok123");

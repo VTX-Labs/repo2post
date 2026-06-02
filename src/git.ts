@@ -6,12 +6,15 @@
  * always present where a repo is) rather than depend on a git library — that
  * keeps the runtime dependency footprint to just the AI SDK.
  *
- * Everything here is read-only: `git log`, `git diff --numstat`, `git tag`. We
- * never write to the repository.
+ * Everything here is read-only: `git log`, `git diff`, `git tag`. We never write
+ * to the repository. By default the actual patch is captured too (shaped by
+ * `diff.ts`: sensitive/generated/binary files skipped, per-file + total caps) so
+ * the model can write from real changes, not just commit messages.
  */
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { shapeDiff, type ShapedDiff } from "./diff.js";
 
 const exec = promisify(execFile);
 
@@ -50,6 +53,12 @@ export interface ChangeSet {
   /** Total insertions / deletions across the range. */
   insertions: number;
   deletions: number;
+  /**
+   * The shaped patch for the range, when diff capture is enabled (the default).
+   * Undefined when disabled via `includeDiff: false`. Sensitive, generated, and
+   * binary files are skipped; per-file and total line caps apply.
+   */
+  diff?: ShapedDiff;
 }
 
 /** Options for {@link collectChanges}. */
@@ -62,6 +71,12 @@ export interface CollectOptions {
   to?: string;
   /** Cap on commits collected (newest first). Default 200. */
   maxCommits?: number;
+  /** Capture and shape the actual patch. Default true. */
+  includeDiff?: boolean;
+  /** Per-file diff line cap (forwarded to {@link shapeDiff}). Default 200. */
+  maxLinesPerFile?: number;
+  /** Total diff line cap (forwarded to {@link shapeDiff}). Default 1500. */
+  maxTotalLines?: number;
 }
 
 // ASCII unit-separator / record-separator delimiters that will not appear in
@@ -165,11 +180,24 @@ export async function collectChanges(options: CollectOptions = {}): Promise<Chan
   const logOut = await git(["log", `--max-count=${maxCommits}`, `--pretty=format:${format}`, range], cwd);
   const commits = parseLog(logOut);
 
-  const diffArgs = from ? ["diff", "--numstat", `${from}..${to}`] : ["diff", "--numstat", to];
-  const numstatOut = await git(diffArgs, cwd);
+  // `git diff A..B` compares endpoints; `git diff <ref>` (no `..`) needs the ref
+  // spelled out for both numstat and patch. Build the spec once.
+  const spec = from ? `${from}..${to}` : to;
+  const numstatOut = await git(["diff", "--numstat", spec], cwd);
   const { files, insertions, deletions } = parseNumstat(numstatOut);
 
-  return { from, to, commits, files, insertions, deletions };
+  const changeSet: ChangeSet = { from, to, commits, files, insertions, deletions };
+
+  if (options.includeDiff !== false) {
+    // -M detects renames (shorter, clearer patches); no color so it parses cleanly.
+    const rawPatch = await git(["diff", "-M", "--no-color", spec], cwd);
+    changeSet.diff = shapeDiff(rawPatch, {
+      ...(options.maxLinesPerFile !== undefined ? { maxLinesPerFile: options.maxLinesPerFile } : {}),
+      ...(options.maxTotalLines !== undefined ? { maxTotalLines: options.maxTotalLines } : {}),
+    });
+  }
+
+  return changeSet;
 }
 
 /** List tags newest-first (by creation date), capped at `limit`. */

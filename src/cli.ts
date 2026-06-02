@@ -20,7 +20,7 @@ import { generatePost } from "./generate.js";
 import { DEFAULT_MODEL, isValidModelId, MODELS } from "./models.js";
 import { allStyles, isStyleName, type StyleName } from "./styles.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 
 interface Flags {
   from?: string;
@@ -34,6 +34,9 @@ interface Flags {
   out?: string;
   maxCommits: number;
   temperature?: number;
+  includeDiff: boolean;
+  maxDiffLines?: number;
+  maxDiffTotal?: number;
   help: boolean;
   version: boolean;
   listModels: boolean;
@@ -46,6 +49,7 @@ function parseArgs(argv: string[]): Flags {
     model: DEFAULT_MODEL,
     cwd: process.cwd(),
     maxCommits: 200,
+    includeDiff: true,
     help: false,
     version: false,
     listModels: false,
@@ -105,6 +109,15 @@ function parseArgs(argv: string[]): Flags {
       case "--max-commits":
         f.maxCommits = parsePositiveInt(requireValue(argv, ++i, a), a);
         break;
+      case "--no-diff":
+        f.includeDiff = false;
+        break;
+      case "--max-diff-lines":
+        f.maxDiffLines = parsePositiveInt(requireValue(argv, ++i, a), a);
+        break;
+      case "--max-diff-total":
+        f.maxDiffTotal = parsePositiveInt(requireValue(argv, ++i, a), a);
+        break;
       case "--temperature":
         f.temperature = parseTemperature(requireValue(argv, ++i, a));
         break;
@@ -162,6 +175,13 @@ ${b("Source")}
   -C, --cwd <dir>        Repository directory ${c.dim("(default: current directory)")}
   --max-commits <n>      Cap commits read from the range ${c.dim("(default: 200)")}
 
+${b("Diff")}
+  ${c.dim("By default the actual code diff is sent so output is grounded even when")}
+  ${c.dim("commit messages are vague. Sensitive/generated/binary files are excluded.")}
+  --no-diff              Send only commit messages + file stats, not the diff
+  --max-diff-lines <n>   Per-file diff line cap ${c.dim("(default: 200)")}
+  --max-diff-total <n>   Total diff line cap   ${c.dim("(default: 1500)")}
+
 ${b("Output")}
   -s, --style <style>    One of:
 ${styleLines}
@@ -179,6 +199,11 @@ ${b("Other")}
 ${b("Credentials")}
   Set ${b("AI_GATEWAY_API_KEY")} to route any model through the Vercel AI Gateway,
   or a provider key the gateway recognizes (OPENAI_API_KEY, ANTHROPIC_API_KEY, …).
+
+${b("Privacy")}
+  The prompt includes commit messages, file stats, and ${b("the code diff")} (unless
+  ${b("--no-diff")}). Files matching secrets (.env, *.pem, credentials), lockfiles,
+  generated/build dirs, and binaries are excluded from the diff automatically.
 
 ${c.dim("Built by VTX Labs · https://vtxlabs.dev")}
 `);
@@ -210,16 +235,22 @@ function hasCredentials(): boolean {
 }
 
 async function acquire(flags: Flags): Promise<ChangeSet & { title?: string; description?: string }> {
+  const diffOpts = {
+    includeDiff: flags.includeDiff,
+    ...(flags.maxDiffLines !== undefined ? { maxLinesPerFile: flags.maxDiffLines } : {}),
+    ...(flags.maxDiffTotal !== undefined ? { maxTotalLines: flags.maxDiffTotal } : {}),
+  };
   if (flags.pr) {
     const ref = parsePrRef(flags.pr);
     const token = process.env["GITHUB_TOKEN"] || process.env["GH_TOKEN"];
-    return collectPullRequest(ref, token);
+    return collectPullRequest(ref, token, diffOpts);
   }
   return collectChanges({
     cwd: flags.cwd,
     maxCommits: flags.maxCommits,
     ...(flags.from !== undefined ? { from: flags.from } : {}),
     to: flags.to,
+    ...diffOpts,
   });
 }
 
@@ -271,6 +302,7 @@ async function main(): Promise<void> {
       {
         changes,
         style: flags.style,
+        includeDiff: flags.includeDiff,
         ...(flags.project !== undefined ? { project: flags.project } : {}),
         ...(flags.guidance !== undefined ? { guidance: flags.guidance } : {}),
         ...(changes.title !== undefined ? { title: changes.title } : {}),

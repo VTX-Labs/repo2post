@@ -1,6 +1,6 @@
 {
   "name": "@vtx-labs/repo2post",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Turn a git diff, tag range, or pull request into a release blog post, changelog, or launch thread with one AI call.",
   "keywords": [
     "git",

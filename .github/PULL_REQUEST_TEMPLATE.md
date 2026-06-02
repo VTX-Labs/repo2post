@@ -19,4 +19,5 @@
 - [ ] `pnpm build` succeeds
 - [ ] README / `--help` updated if behavior changed
 - [ ] AI calls remain injectable so tests run with no network or API key
-- [ ] No source code is sent to the model — only commit messages and diff stats
+- [ ] Secret/generated/binary files stay excluded from the captured diff (no regression in `diff.ts`)
+- [ ] `--no-diff` still produces a valid messages-only prompt

@@ -19,10 +19,12 @@
 ---
 
 You shipped the release. Now you have to write it up — again. **repo2post** reads
-what actually changed (commits + diff stats between two refs, or a GitHub PR) and
-drafts the write-up in the format you need: a blog post, a Keep-a-Changelog
-entry, GitHub release notes, a launch thread, or a technical breakdown. It is
-**grounded** — the prompt forbids inventing features that aren't in the diff — and
+what actually changed — commits, file stats, **and the real code diff** between
+two refs (or a GitHub PR) — and drafts the write-up in the format you need: a
+blog post, a Keep-a-Changelog entry, GitHub release notes, a launch thread, or a
+technical breakdown. Because it sees the diff, the output stays accurate even
+when your commit messages are just `wip` and `fix`. It is **grounded** — the
+prompt forbids inventing features that aren't in the changes — and
 **model-agnostic**: pass any `provider/model` string and it routes through the
 [Vercel AI Gateway](https://vercel.com/docs/ai-gateway).
 
@@ -79,6 +81,11 @@ Source
   -C, --cwd <dir>        Repository directory (default: current directory)
   --max-commits <n>      Cap commits read from the range (default: 200)
 
+Diff (sent by default so output is grounded even with vague commit messages)
+  --no-diff              Send only commit messages + file stats, not the diff
+  --max-diff-lines <n>   Per-file diff line cap (default: 200)
+  --max-diff-total <n>   Total diff line cap   (default: 1500)
+
 Output
   -s, --style <style>    blog | changelog | release-notes | thread | technical
   -m, --model <id>       provider/model id (default: anthropic/claude-sonnet-4.5)
@@ -132,28 +139,43 @@ console.log(post.content);
 
 | Export                            | Description                                                        |
 | :-------------------------------- | :----------------------------------------------------------------- |
-| `collectChanges(options?)`        | Read a git range (read-only) → `ChangeSet`                         |
-| `collectPullRequest(ref, token?)` | Read a GitHub PR via the REST API → `ChangeSet`                    |
+| `collectChanges(options?)`        | Read a git range + shaped diff (read-only) → `ChangeSet`           |
+| `collectPullRequest(ref, token?)` | Read a GitHub PR (incl. file patches) → `ChangeSet`               |
 | `parsePrRef(input)`               | Parse `owner/repo#123` or a PR URL                                 |
+| `shapeDiff(patch, options?)`      | Skip sensitive/generated/binary files, truncate → `ShapedDiff`    |
+| `classifyPath(path)`              | Why a path would be excluded from the diff (or `null`)            |
 | `buildPrompt(input)`              | Build the grounded system + user prompt for a change set + style   |
 | `generatePost(input, options?)`   | Run the AI generation → `{ content, model, usage, … }`             |
 | `allStyles()` / `MODELS`          | The available styles and curated models                            |
+
+Pass `includeDiff: false` to either collector (or `generatePost`) for the
+messages-only behavior; tune `maxLinesPerFile` / `maxTotalLines` to control how
+much diff is sent.
 
 `generatePost` accepts an injected `generateText` (matching the AI SDK shape),
 so you can unit-test the whole pipeline with no network and no API key.
 
 ## How it works
 
-1. **Acquire** — read commits + `git diff --numstat` between two refs (read-only),
-   or fetch a pull request from the GitHub API. A PR becomes the same `ChangeSet`.
-2. **Build a grounded prompt** — serialize the commits and largest file changes,
-   truncate to a budget, and pin the rules: write only what the diff supports,
-   prefer user-facing impact, never invent versions or numbers.
-3. **Generate** — one `generateText` call to the chosen model, via the AI Gateway.
-4. **Emit** — content to stdout (or a file); usage + progress to stderr.
+1. **Acquire** — read commits, `git diff --numstat`, and the actual patch between
+   two refs (all read-only), or fetch the same from a GitHub PR. A PR becomes the
+   same `ChangeSet`.
+2. **Shape the diff** — drop files that are sensitive (`.env`, `*.pem`,
+   `credentials`), generated (lockfiles, `dist/`, `node_modules/`, `*.min.js`),
+   or binary; cap each remaining file's hunk and the total size, and record
+   anything omitted so the prompt stays honest about coverage.
+3. **Build a grounded prompt** — serialize the commits, largest file changes, and
+   the shaped diff; pin the rules: write only what the changes support, lean on
+   the diff when messages are vague, never invent versions or numbers.
+4. **Generate** — one `generateText` call to the chosen model, via the AI Gateway.
+5. **Emit** — content to stdout (or a file); usage + progress to stderr.
 
-> repo2post never writes to your repository and never sends your source code —
-> only commit messages and diff statistics are included in the prompt.
+> **What's sent to the model.** Commit messages, file statistics, and the shaped
+> code diff (use `--no-diff` to send only messages + stats). repo2post never
+> writes to your repository, and it automatically excludes secret files,
+> lockfiles, generated/build output, and binaries from the diff. It's still your
+> code going to a model provider — review the output, and use `--no-diff` for
+> closed-source repos where even excerpts shouldn't leave the machine.
 
 ## License
 
