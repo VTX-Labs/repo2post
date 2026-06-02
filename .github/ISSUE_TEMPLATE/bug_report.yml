@@ -1,0 +1,90 @@
+name: Bug report
+description: Report a reproducible problem in repo2post.
+title: "[Bug]: "
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A clear, reproducible bug is the fastest path to a fix.
+        Please confirm you're on the latest version and search existing issues first.
+  - type: input
+    id: version
+    attributes:
+      label: repo2post version
+      description: Output of `repo2post --version` (or the installed package version).
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A clear, one or two sentence description of the bug.
+    validations:
+      required: true
+  - type: dropdown
+    id: style
+    attributes:
+      label: Style
+      description: Which `--style` were you generating?
+      options:
+        - blog
+        - changelog
+        - release-notes
+        - thread
+        - technical
+        - not style-specific
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model
+      description: The `--model` id you used (e.g. anthropic/claude-sonnet-4.5).
+    validations:
+      required: false
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: >
+        The exact command and, if relevant, a small description of the git range.
+        Do NOT paste API keys. If the issue is about generated wording, a short
+        excerpt of the output is enough.
+      placeholder: |
+        1. Command: repo2post --from v1.0.0 --to v1.1.0 -s changelog
+        2. Repo state: ~12 commits, two tags
+        3. Observe: ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual behavior
+      description: What you expected, and what actually happened (include the exact error / exit code).
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - OS:
+        - Node version:
+        - Package manager + version:
+        - How invoked (npx / global / devDependency):
+        - Credential path (AI_GATEWAY_API_KEY / provider key) — do NOT paste the key:
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am on the latest version, or noted the version above.
+          required: true
+        - label: I did not paste any API keys or private source code.
+          required: true

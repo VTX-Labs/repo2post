@@ -1,0 +1,66 @@
+{
+  "name": "@vtx-labs/repo2post",
+  "version": "0.1.0",
+  "description": "Turn a git diff, tag range, or pull request into a release blog post, changelog, or launch thread with one AI call.",
+  "keywords": [
+    "git",
+    "changelog",
+    "release-notes",
+    "blog",
+    "ai",
+    "ai-sdk",
+    "release",
+    "devrel",
+    "cli",
+    "vtx-labs"
+  ],
+  "homepage": "https://github.com/VTX-Labs/repo2post#readme",
+  "bugs": "https://github.com/VTX-Labs/repo2post/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VTX-Labs/repo2post.git"
+  },
+  "license": "MIT",
+  "author": "VTX Labs (https://vtxlabs.dev)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "repo2post": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "docs": "typedoc",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "ai": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typedoc": "^0.28.0",
+    "typedoc-material-theme": "^1.4.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "packageManager": "pnpm@10.6.5"
+}

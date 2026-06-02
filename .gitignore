@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Generated API docs (built fresh in CI, published to GitHub Pages).
+docs/
+
+# Never commit API keys — repo2post reads them from the environment.
+.env
+.env.local
+.env.*.local
