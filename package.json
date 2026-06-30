@@ -54,7 +54,7 @@
     "ai": "^6.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.0.1",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typedoc": "^0.28.0",
