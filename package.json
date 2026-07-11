@@ -39,7 +39,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsup",
@@ -51,7 +51,7 @@
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
-    "ai": "^6.0.0"
+    "ai": "^7.0.16"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

@@ -3,7 +3,7 @@
  *
  * An alternative input to a local git range: read a single PR's title, body,
  * and commit list straight from the GitHub REST API. Uses the built-in `fetch`
- * (Node 18+) — no extra dependency. A token (`GITHUB_TOKEN`) is optional but
+ * — no extra dependency. A token (`GITHUB_TOKEN`) is optional but
  * recommended to raise the rate limit and reach private repos.
  */
 
